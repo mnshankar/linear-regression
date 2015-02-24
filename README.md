@@ -1,7 +1,4 @@
-[![Build Status](https://travis-ci.org/mnshankar/UtilityBehaviors.png)](https://travis-ci.org/mnshankar/UtilityBehaviors)
-[![Coverage Status](https://coveralls.io/repos/mnshankar/UtilityBehaviors/badge.png?branch=master)](https://coveralls.io/r/mnshankar/UtilityBehaviors?branch=master)
-[![Total Downloads](https://poser.pugx.org/mnshankar/utility_behaviors/d/total.png)](https://packagist.org/packages/mnshankar/utility_behaviors)
-[![Latest Stable Version](https://poser.pugx.org/mnshankar/utility_behaviors/v/stable.png)](https://packagist.org/packages/mnshankar/utility_behaviors)
+[![Build Status](https://travis-ci.org/mnshankar/linear-regression.png)](https://travis-ci.org/mnshankar/linear-regression)
 
 Simple Linear Regression
 ========================
