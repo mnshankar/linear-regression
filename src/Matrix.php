@@ -1,7 +1,11 @@
 <?php
-namespace mnshankar\LinearRegression;
 /**
- * Copyright (c)  2011 Shankar Manamalkav <nshankar@ufl.edu>
+ * Contains class Matrix.
+ *
+ * Simple matrix manipulation library.
+ *
+ * LICENSE:
+ * Copyright (c) 2011 Shankar Manamalkav <nshankar@ufl.edu>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,56 +25,94 @@ namespace mnshankar\LinearRegression;
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  *
- * Simple matrix manipulation library
- *
- * @author shankar<nshankar@ufl.edu>
+ * @author    shankar<nshankar@ufl.edu>
+ * @author    Michael Cummings<mgcummings@yahoo.com>
+ * @copyright 2011 Shankar Manamalkav
  */
+namespace mnshankar\LinearRegression;
+
 class Matrix
 {
-
-    //global vars
-    protected $rows;
-    protected $columns;
-    protected $MainMatrix = array();
-
     /**
      * Matrix Constructor
      *
-     * Initialize the Matrix object. Throw an exception if jagged array is passed.
+     * Initialize the Matrix object.
      *
      * @param array $matrix - The array
-     * @throws \Exception
+     *
+     * @throws \InvalidArgumentException Throws exception if jagged array is given.
      */
-    function __construct($matrix)
+    public function __construct(array $matrix)
     {
-        for ($i = 0; $i < count($matrix); $i++) {
-            for ($j = 0; $j < count($matrix[$i]); $j++)
-                $this->MainMatrix[$i][$j] = $matrix[$i][$j];
-        }
-        $this->rows = count($this->MainMatrix);
-        $this->columns = count($this->MainMatrix[0]);
-        if (!$this->isValidMatrix()) {
-            throw new \Exception("Invalid matrix");
+        // Insure matrix keys are numeric and start with 0 by using array_values().
+        $matrix = array_values($matrix);
+        $this->rows = count($matrix);
+        $this->columns = count($matrix[0]);
+        foreach ($matrix as $i => $row) {
+            $row = array_values($row);
+            if ($this->columns !== count($row)) {
+                throw new \InvalidArgumentException('Invalid matrix');
+            }
+            $this->MainMatrix[$i] = $row;
         }
     }
-
     /**
-     * Is it a valid matrix?
+     * Add matrix2 to matrix object that calls this method.
      *
-     * Returns 'False' if it is not a rectangular matrix
+     * @param Matrix $matrix2
      *
-     * @return bool
+     * @return Matrix Note that original matrix is left unchanged
+     * @throws \DomainException
+     * @throws \InvalidArgumentException
      */
-    private function isValidMatrix()
+    public function Add(Matrix $matrix2)
     {
-        for ($i = 0; $i < $this->rows; $i++) {
-            $numCol = count($this->MainMatrix [$i]);
-            if ($this->columns != $numCol)
-                return false;
+        if (($this->rows !== $matrix2->NumRows()) || ($this->columns !== $matrix2->NumColumns())) {
+            throw new \DomainException('Matrices are not the same size!');
         }
-        return true;
+        $newMatrix = [];
+        foreach ($this->MainMatrix as $i => $row) {
+            foreach ($row as $j => $column) {
+                $newMatrix[$i][$j] = $column + $matrix2->GetElementAt($i, $j);
+            }
+        }
+        return new Matrix($newMatrix);
     }
-
+    /**
+     * Compute the determinant of the square matrix on which this method is called
+     *
+     * @link http://mathworld.wolfram.com/DeterminantExpansionbyMinors.html
+     * @return int|double (depends on input)
+     * @throws \RangeException
+     * @throws \InvalidArgumentException
+     */
+    public function Determinant()
+    {
+        if (!$this->isSquareMatrix()) {
+            throw new \RangeException('Not a square matrix!');
+        }
+        $rows = $this->rows;
+        $columns = $this->columns;
+        $determinant = 0;
+        if ($rows === 1 && $columns === 1) {
+            return $this->MainMatrix[0][0];
+        }
+        if ($rows === 2 && $columns === 2) {
+            $determinant = $this->MainMatrix[0][0] * $this->MainMatrix[1][1] -
+                $this->MainMatrix[0][1] * $this->MainMatrix[1][0];
+        } else {
+            /** @noinspection ForeachInvariantsInspection */
+            for ($j = 0; $j < $columns; ++$j) {
+                $subMatrix = $this->GetSubMatrix(0, $j);
+                if ($j % 2 === 0) {
+                    $determinant += $this->MainMatrix[0][$j] * $subMatrix->Determinant();
+                } else {
+                    $determinant -= $this->MainMatrix[0][$j] * $subMatrix->Determinant();
+                }
+            }
+        }
+        return $determinant;
+    }
     /**
      * Display the matrix
      * Formatted display of matrix for debugging.
@@ -79,18 +121,26 @@ class Matrix
     {
         $rows = $this->rows;
         $cols = $this->columns;
-        $debugString =  "Order of the matrix is ($rows rows X $cols columns)\n";
-        for ($r = 0; $r < $rows; $r++) {
-            for ($c = 0; $c < $cols; $c++) {
-                $debugString.=$this->MainMatrix[$r][$c];
-            }
-            $debugString.= "\n";
+        $debugString = "Order of the matrix is ($rows rows X $cols columns)\n";
+        foreach ($this->MainMatrix as $row) {
+            $debugString .= implode(', ', $row) . "\n";
         }
         return $debugString;
     }
-
     /**
-     * Get the inner array stored in matrix object
+     * Return element found at location $row, $col.
+     *
+     * @param int $row
+     * @param int $col
+     *
+     * @return int|double (depends on input)
+     */
+    public function GetElementAt($row, $col)
+    {
+        return $this->MainMatrix[$row][$col];
+    }
+    /**
+     * Get the inner array stored in matrix object.
      *
      * @return array
      */
@@ -98,37 +148,198 @@ class Matrix
     {
         return $this->MainMatrix;
     }
-
     /**
-     * Number of rows in the matrix
-     * @return integer
+     * Return the sub-matrix after crossing out the $crossX and $crossY row and column respectively.
+     *
+     * Part of determinant expansion by minors method.
+     *
+     * @param int $crossX
+     * @param int $crossY
+     *
+     * @return Matrix
+     * @throws \InvalidArgumentException
      */
-    public function NumRows()
+    public function GetSubMatrix($crossX, $crossY)
     {
-        return count($this->MainMatrix);
+        $rows = $this->rows;
+        $columns = $this->columns;
+        $newMatrix = [];
+        $p = 0; // sub-matrix row counter
+        for ($i = 0; $i < $rows; ++$i) {
+            $q = 0; // sub-matrix col counter
+            if ($crossX !== $i) {
+                for ($j = 0; $j < $columns; ++$j) {
+                    if ($crossY !== $j) {
+                        $newMatrix[$p][$q] = $this->GetElementAt($i, $j);
+                        //$matrix[$i][$j];
+                        ++$q;
+                    }
+                }
+                ++$p;
+            }
+        }
+        return new Matrix($newMatrix);
     }
-
+    /**
+     * Compute the inverse of the matrix on which this method is found (A*A(-1)=I).
+     *
+     * (cofactor(a))T/(det a)
+     *
+     * @link http://www.mathwords.com/i/inverse_of_a_matrix.htm
+     * @return Matrix
+     * @throws \InvalidArgumentException
+     * @throws \RangeException
+     */
+    public function Inverse()
+    {
+        if (!$this->isSquareMatrix()) {
+            throw new \RangeException('Not a square matrix!');
+        }
+        $newMatrix = [];
+        /** @noinspection ForeachInvariantsInspection */
+        for ($i = 0; $i < $this->rows; ++$i) {
+            /** @noinspection ForeachInvariantsInspection */
+            for ($j = 0; $j < $this->columns; ++$j) {
+                $subMatrix = $this->GetSubMatrix($i, $j);
+                if (($i + $j) % 2 === 0) {
+                    $newMatrix[$i][$j] = $subMatrix->Determinant();
+                } else {
+                    $newMatrix[$i][$j] = -$subMatrix->Determinant();
+                }
+            }
+        }
+        $cofactorMatrix = new Matrix($newMatrix);
+        return $cofactorMatrix->Transpose()
+                              ->ScalarDivide($this->Determinant());
+    }
+    /**
+     * Multiply matrix2 into matrix object that calls this method.
+     *
+     * @param Matrix $matrix2
+     *
+     * @return Matrix Note that original matrix is left unaltered
+     * @throws \DomainException
+     * @throws \InvalidArgumentException
+     */
+    public function Multiply(Matrix $matrix2)
+    {
+        $columns2 = $matrix2->NumColumns();
+        if ($this->columns !== $matrix2->NumRows()) {
+            throw new \DomainException('Incompatible matrix types supplied');
+        }
+        $newMatrix = [];
+        /** @noinspection ForeachInvariantsInspection */
+        for ($i = 0; $i < $this->rows; $i++) {
+            /** @noinspection ForeachInvariantsInspection */
+            for ($j = 0; $j < $columns2; $j++) {
+                $newMatrix[$i][$j] = 0;
+                /** @noinspection ForeachInvariantsInspection */
+                for ($ctr = 0; $ctr < $this->columns; $ctr++) {
+                    $newMatrix[$i][$j] += $this->MainMatrix[$i][$ctr] *
+                        $matrix2->GetElementAt($ctr, $j);
+                }
+            }
+        }
+        return new Matrix($newMatrix);
+    }
     /**
      * Number of columns in the matrix
-     * @return integer
+     *
+     * @return int
      */
     public function NumColumns()
     {
         return count($this->MainMatrix[0]);
     }
-
     /**
-     * Return element found at location $row, $col.
+     * Number of rows in the matrix
      *
-     * @param int $row
-     * @param int $col
-     * @return object(depends on input)
+     * @return int
      */
-    public function GetElementAt($row, $col)
+    public function NumRows()
     {
-        return $this->MainMatrix[$row][$col];
+        return count($this->MainMatrix);
     }
-
+    /**
+     * Divide every element of matrix on which this method is called by the scalar.
+     *
+     * @param int|double $scalar
+     *
+     * @return Matrix
+     * @throws \InvalidArgumentException
+     */
+    public function ScalarDivide($scalar)
+    {
+        if (!is_numeric($scalar)) {
+            throw new \InvalidArgumentException('Excepted int or double but given ' . gettype($scalar));
+        }
+        $newMatrix = [];
+        foreach ($this->MainMatrix as $i => $row) {
+            foreach ($row as $j => $col) {
+                $newMatrix[$i][$j] = $col / $scalar;
+            }
+        }
+        return new Matrix($newMatrix);
+    }
+    /**
+     * Multiply every element of matrix on which this method is called by the scalar.
+     *
+     * @param int|double $scalar
+     *
+     * @return Matrix
+     * @throws \InvalidArgumentException
+     */
+    public function ScalarMultiply($scalar)
+    {
+        if (!is_numeric($scalar)) {
+            throw new \InvalidArgumentException('Excepted int or double but given ' . gettype($scalar));
+        }
+        $newMatrix = [];
+        foreach ($this->MainMatrix as $i => $row) {
+            foreach ($row as $j => $col) {
+                $newMatrix[$i][$j] = $col * $scalar;
+            }
+        }
+        return new Matrix($newMatrix);
+    }
+    /**
+     * Subtract matrix2 from matrix object on which this method is called
+     *
+     * @param Matrix $matrix2
+     *
+     * @return Matrix Note that original matrix is left unchanged
+     * @throws \DomainException
+     * @throws \InvalidArgumentException
+     */
+    public function Subtract(Matrix $matrix2)
+    {
+        if (($this->rows !== $matrix2->NumRows()) || ($this->columns !== $matrix2->NumColumns())) {
+            throw new \DomainException('Matrices are not the same size!');
+        }
+        $newMatrix = [];
+        foreach ($this->MainMatrix as $i => $row) {
+            foreach ($row as $j => $column) {
+                $newMatrix[$i][$j] = $column - $matrix2->GetElementAt($i, $j);
+            }
+        }
+        return new Matrix($newMatrix);
+    }
+    /**
+     * Compute the transpose of matrix on which this method is called (invert rows and columns).
+     *
+     * @return Matrix Original Matrix is not affected.
+     * @throws \InvalidArgumentException
+     */
+    public function Transpose()
+    {
+        $newArray = [];
+        foreach ($this->MainMatrix as $i => $row) {
+            foreach ($row as $j => $col) {
+                $newArray[$j][$i] = $col;
+            }
+        }
+        return new Matrix($newArray);
+    }
     /**
      * Is this a square matrix?
      *
@@ -138,236 +349,18 @@ class Matrix
      */
     public function isSquareMatrix()
     {
-        if ($this->rows == $this->columns)
-            return true;
-
-        return false;
+        return $this->rows === $this->columns;
     }
-
     /**
-     * Subtract matrix2 from matrix object on which this method is called
-     * @param Matrix|Matrix $matrix2
-     * @throws \Exception
-     * @return Matrix Note that original matrix is left unchanged
+     * @var array MainMatrix
      */
-    public function Subtract(Matrix $matrix2)
-    {
-        $rows1 = $this->rows;
-        $columns1 = $this->columns;
-
-        $rows2 = $matrix2->NumRows();
-        $columns2 = $matrix2->NumColumns();
-
-        if (($rows1 != $rows2) || ($columns1 != $columns2))
-            throw new \Exception('Matrices are not the same size!');
-
-        for ($i = 0; $i < $rows1; $i++) {
-            for ($j = 0; $j < $columns1; $j++) {
-                $newMatrix[$i][$j] = $this->MainMatrix[$i][$j] -
-                    $matrix2->GetElementAt($i, $j);
-            }
-        }
-        return new Matrix($newMatrix);
-    }
-
+    protected $MainMatrix = [];
     /**
-     * Add matrix2 to matrix object that calls this method.
-     * @param Matrix|Model_Matrix $matrix2
-     * @throws \Exception
-     * @return Matrix Note that original matrix is left unchanged
+     * @var int columns
      */
-    function Add(Matrix $matrix2)
-    {
-        $rows1 = $this->rows;
-        $rows2 = $matrix2->NumRows();
-        $columns1 = $this->columns;
-        $columns2 = $matrix2->NumColumns();
-        if (($rows1 != $rows2) || ($columns1 != $columns2))
-            throw new \Exception('Matrices are not the same size!');
-
-        for ($i = 0; $i < $rows1; $i++) {
-            for ($j = 0; $j < $columns1; $j++) {
-                $newMatrix[$i][$j] = $this->MainMatrix[$i][$j] +
-                    $matrix2->GetElementAt($i, $j);
-            }
-        }
-        return new Matrix($newMatrix);
-    }
-
+    protected $columns = 0;
     /**
-     * Multiply matrix2 into matrix object that calls this method
-     * @param Matrix|Model_Matrix $matrix2
-     * @throws \Exception
-     * @return Matrix Note that original matrix is left unaltered
+     * @var int rows
      */
-    function Multiply(Matrix $matrix2)
-    {
-        $sum = 0;
-        $rows1 = $this->rows;
-        $columns1 = $this->columns;
-
-        $columns2 = $matrix2->NumColumns();
-        $rows2 = $matrix2->NumRows();
-        if ($columns1 != $rows2)
-            throw new \Exception('Incompatible matrix types supplied');
-        for ($i = 0; $i < $rows1; $i++) {
-            for ($j = 0; $j < $columns2; $j++) {
-                $newMatrix[$i][$j] = 0;
-                for ($ctr = 0; $ctr < $columns1; $ctr++) {
-                    $newMatrix[$i][$j] += $this->MainMatrix[$i][$ctr] *
-                        $matrix2->GetElementAt($ctr, $j);
-                }
-            }
-        }
-        return new Matrix($newMatrix);
-    }
-
-    /**
-     * Multiply every element of matrix on which this method is called by the scalar
-     * @param object $scalar
-     * @return Matrix
-     */
-    public function ScalarMultiply($scalar)
-    {
-        $rows = $this->rows;
-        $columns = $this->columns;
-
-        $newMatrix = array();
-        for ($i = 0; $i < $rows; $i++) {
-            for ($j = 0; $j < $columns; $j++) {
-                $newMatrix[$i][$j] = $this->MainMatrix[$i][$j] * $scalar;
-            }
-        }
-        return new Matrix($newMatrix);
-    }
-
-    /**
-     * Divide every element of matrix on which this method is called by the scalar
-     * @param object $scalar
-     * @return Matrix
-     */
-    public function ScalarDivide($scalar)
-    {
-        $rows = $this->rows;
-        $columns = $this->columns;
-
-        $newMatrix = array();
-        for ($i = 0; $i < $rows; $i++) {
-            for ($j = 0; $j < $columns; $j++) {
-                $newMatrix[$i][$j] = $this->MainMatrix[$i][$j] / $scalar;
-            }
-        }
-        return new Matrix($newMatrix);
-    }
-
-    /**
-     * Return the sub-matrix after crossing out the $crossx and $crossy row and column respectively
-     * Part of determinant expansion by minors method
-     * @param int $crossX
-     * @param int $crossY
-     * @return Matrix
-     */
-    public function GetSubMatrix($crossX, $crossY)
-    {
-        $rows = $this->rows;
-        $columns = $this->columns;
-
-        $newMatrix = array();
-        $p = 0; // submatrix row counter
-        for ($i = 0; $i < $rows; $i++) {
-            $q = 0; // submatrix col counter
-            if ($crossX != $i) {
-                for ($j = 0; $j < $columns; $j++) {
-                    if ($crossY != $j) {
-                        $newMatrix[$p][$q] = $this->GetElementAt($i, $j);
-                        //$matrix[$i][$j];
-                        $q++;
-                    }
-                }
-                $p++;
-            }
-        }
-        return new Matrix($newMatrix);
-    }
-
-    /**
-     * Compute the determinant of the square matrix on which this method is called
-     * @link http://mathworld.wolfram.com/DeterminantExpansionbyMinors.html
-     * @throws \Exception
-     * @return object(depends on input)
-     */
-    public function Determinant()
-    {
-        if (!$this->isSquareMatrix())
-            throw new \Exception("Not a square matrix!");
-        $rows = $this->rows;
-        $columns = $this->columns;
-        $determinant = 0;
-        if ($rows == 1 && $columns == 1) {
-            return $this->MainMatrix[0][0];
-        }
-        if ($rows == 2 && $columns == 2) {
-            $determinant = $this->MainMatrix[0][0] * $this->MainMatrix[1][1] -
-                $this->MainMatrix[0][1] * $this->MainMatrix[1][0];
-        } else {
-            for ($j = 0; $j < $columns; $j++) {
-                $subMatrix = $this->GetSubMatrix(0, $j);
-                if (fmod($j, 2) == 0) {
-                    $determinant += $this->MainMatrix[0][$j] * $subMatrix->Determinant();
-                } else {
-                    $determinant -= $this->MainMatrix[0][$j] * $subMatrix->Determinant();
-                }
-            }
-        }
-        return $determinant;
-    }
-
-    /**
-     * Compute the transpose of matrix on which this method is called (invert rows and columns)
-     * @return Matrix
-     */
-    public function Transpose()
-    {
-        $rows = $this->rows;
-        $columns = $this->columns;
-        $newArray = array();
-        for ($i = 0; $i < $rows; $i++) {
-            for ($j = 0; $j < $columns; $j++) {
-                $newArray[$j][$i] = $this->MainMatrix[$i][$j];
-            }
-        }
-        return new Matrix($newArray);
-    }
-
-    /**
-     * Compute the inverse of the matrix on which this method is found (A*A(-1)=I)
-     * (cofactor(a))T/(det a)
-     * @link http://www.mathwords.com/i/inverse_of_a_matrix.htm
-     * @throws \Exception
-     * @return Matrix
-     */
-    function Inverse()
-    {
-        if (!$this->isSquareMatrix())
-            throw new \Exception("Not a square matrix!");
-        $rows = $this->rows;
-        $columns = $this->columns;
-
-        $newMatrix = array();
-        for ($i = 0; $i < $rows; $i++) {
-            for ($j = 0; $j < $columns; $j++) {
-                $subMatrix = $this->GetSubMatrix($i, $j);
-                if (fmod($i + $j, 2) == 0) {
-                    $newMatrix[$i][$j] = ($subMatrix->Determinant());
-                } else {
-                    $newMatrix[$i][$j] = -($subMatrix->Determinant());
-                }
-            }
-        }
-        $cofactorMatrix = new Matrix($newMatrix);
-        return $cofactorMatrix->Transpose()
-            ->ScalarDivide($this->Determinant());
-    }
+    protected $rows = 0;
 }
-
-?>
