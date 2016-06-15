@@ -1,7 +1,14 @@
 <?php
-namespace mnshankar\LinearRegression;
 /**
- * Copyright (c)  2011 Shankar Manamalkav <nshankar@ufl.edu>
+ * Contains class Regression.
+ *
+ * Class for computing multiple linear regression of the form
+ * y=a+b1x1+b2x2+b3x3...
+ *
+ * PHP version 5.4
+ *
+ * LICENSE:
+ * Copyright (c) 2011 Shankar Manamalkav <nshankar@ufl.edu>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,272 +28,382 @@ namespace mnshankar\LinearRegression;
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  *
- * Class for computing multiple linear regression of the form
- * y=a+b1x1+b2x2+b3x3...
- *
- * @author shankar<nshankar@ufl.edu>
- *
- *
+ * @author    shankar<nshankar@ufl.edu>
+ * @author    Michael Cummings<mgcummings@yahoo.com>
+ * @copyright 2011 Shankar Manamalkav
  */
+namespace mnshankar\LinearRegression;
+
 class Regression
 {
-
-    private $SSEScalar; //sum of squares due to error
-    private $SSRScalar; //sum of squares due to regression
-    private $SSTOScalar; //Total sum of squares
-    private $RSquare;         //R square
-    private $F;               //F statistic
-    private $coefficients;    //regression coefficients array
-    private $stderrors;    //standard errror array
-    private $tstats;     //t statistics array
-    private $pvalues;     //p values array
-    private $x = array();
-    private $y = array();
-    private $multipleR;
-    private $observations;
-
-    public function getX()
+    /**
+     *
+     * @throws \DomainException
+     * @throws \InvalidArgumentException
+     * @throws \LogicException
+     * @throws \RangeException
+     */
+    public function compute()
     {
-        return $this->x;
+        if (0 === count($this->getX()) || 0 === count($this->getY())) {
+            throw new \LogicException('Please supply valid X and Y arrays');
+        }
+        $this->observations = count($this->getX());
+        $mx = new Matrix($this->getX());
+        $my = new Matrix($this->getY());
+        //coefficient(b) = (X'X)-1X'Y
+        $xTx = $mx->transpose()
+                  ->multiply($mx)
+                  ->inverse();
+        $xTy = $mx->transpose()
+                  ->multiply($my);
+        $coeff = $xTx->multiply($xTy);
+        //note: intercept is included
+        $num_independent = $mx->numColumns();
+        $sample_size = $mx->numRows();
+        $dfTotal = $sample_size - 1;
+        $dfModel = $num_independent - 1;
+        $dfResidual = $dfTotal - $dfModel;
+        //create unit vector..
+        $um = new Matrix(array_fill(0, $sample_size, [1]));
+        //SSR = b(t)X(t)Y - (Y(t)UU(T)Y)/n
+        //MSE = SSE/(df)
+        $SSR = $coeff->transpose()
+                     ->multiply($mx->transpose())
+                     ->multiply($my)
+                     ->subtract(
+                         $my->transpose()
+                            ->multiply($um)
+                            ->multiply($um->transpose())
+                            ->multiply($my)
+                            ->scalarDivide($sample_size)
+                     );
+        $SSE = $my->transpose()
+                  ->multiply($my)
+                  ->subtract(
+                      $coeff->transpose()
+                            ->multiply($mx->transpose())
+                            ->multiply($my)
+                  );
+        $SSTO = $SSR->add($SSE);
+        $this->SSEScalar = $SSE->getElementAt(0, 0);
+        $this->SSRScalar = $SSR->getElementAt(0, 0);
+        $this->SSTOScalar = $SSTO->getElementAt(0, 0);
+        $this->rSquare = $this->SSRScalar / $this->SSTOScalar;
+        $this->multipleR = sqrt($this->getRSquare());
+        $this->f = (($this->SSRScalar / $dfModel) / ($this->SSEScalar / $dfResidual));
+        $MSE = $SSE->scalarDivide($dfResidual);
+        //this is a scalar.. get element
+        $e = $MSE->getElementAt(0, 0);
+        $stdErr = $xTx->scalarMultiply($e);
+        $seArray = [];
+        $tStat = [];
+        $pValue = [];
+        /** @noinspection ForeachInvariantsInspection */
+        for ($i = 0; $i < $num_independent; $i++) {
+            //get the diagonal elements
+            $seArray[] = [sqrt($stdErr->getElementAt($i, $i))];
+            //compute the t-statistic
+            $tStat[] = [$coeff->getElementAt($i, 0) / $seArray[$i][0]];
+            //compute the student p-value from the t-stat
+            $pValue[] = [$this->student_PValue($tStat[$i][0], $dfResidual)];
+        }
+        //convert into 1-d vectors and store
+        /** @noinspection ForeachInvariantsInspection */
+        for ($ctr = 0; $ctr < $num_independent; $ctr++) {
+            $this->coefficients[] = $coeff->getElementAt($ctr, 0);
+            $this->stdErrors[] = $seArray[$ctr][0];
+            $this->tStats[] = $tStat[$ctr][0];
+            $this->pValues[] = $pValue[$ctr][0];
+        }
     }
-
-    public function getY()
-    {
-        return $this->y;
-    }
-
-    public function setX($x)
-    {
-        $this->x = $x;
-    }
-
-    public function setY($y)
-    {
-        $this->y = $y;
-    }
-
-    public function getSSE()
-    {
-        return $this->SSEScalar;
-    }
-
-    public function getSSR()
-    {
-        return $this->SSRScalar;
-    }
-
-    public function getSSTO()
-    {
-        return $this->SSTOScalar;
-    }
-
-    public function getRSQUARE()
-    {
-        return $this->RSquare;
-    }
-
-    public function getMultipleR()
-    {
-        return $this->multipleR;
-    }
-
-    public function getObservations()
-    {
-        return $this->observations;
-    }
-
-    public function getF()
-    {
-        return $this->F;
-    }
-
+    /**
+     * @return array
+     */
     public function getCoefficients()
     {
         return $this->coefficients;
     }
-
-    public function getStandardError()
+    /**
+     * @return int|float
+     */
+    public function getF()
     {
-        return $this->stderrors;
+        return $this->f;
     }
-
-    public function getTStats()
+    /**
+     * @return float|int
+     */
+    public function getMultipleR()
     {
-        return $this->tstats;
+        return $this->multipleR;
     }
-
+    /**
+     * @return int
+     */
+    public function getObservations()
+    {
+        return $this->observations;
+    }
+    /**
+     * @return array
+     */
     public function getPValues()
     {
-        return $this->pvalues;
+        return $this->pValues;
     }
-
     /**
-     * @example $reg->loadCSV('abc.csv',array(0), array(1,2,3));
-     * @param string $file
-     * @param array $dependentVariableColumn
-     * @param array $independentVariableColumns
-     * @param bool $hasHeader
-     * @internal param array $xcolnumbers
-     * @internal param type $ycolnumber
+     * @return float|int
      */
-    public function loadCSV($file, array $dependentVariableColumn,
-                            array $independentVariableColumns, $hasHeader = true)
+    public function getRSquare()
     {
-        $xarray = array();
-        $yarray = array();
-        $rawData = array();
-        $handle = fopen($file, "r");
-
+        return $this->rSquare;
+    }
+    /**
+     * @return float|int
+     */
+    public function getSSEScalar()
+    {
+        return $this->SSEScalar;
+    }
+    /**
+     * @return float|int
+     */
+    public function getSSRScalar()
+    {
+        return $this->SSRScalar;
+    }
+    /**
+     * @return float|int
+     */
+    public function getSSTOScalar()
+    {
+        return $this->SSTOScalar;
+    }
+    /**
+     * @return array
+     */
+    public function getStdErrors()
+    {
+        return $this->stdErrors;
+    }
+    /**
+     * @return array
+     */
+    public function getTStats()
+    {
+        return $this->tStats;
+    }
+    /**
+     * @return array
+     */
+    public function getX()
+    {
+        return $this->x;
+    }
+    /**
+     * @return array
+     */
+    public function getY()
+    {
+        return $this->y;
+    }
+    /** @noinspection MoreThanThreeArgumentsInspection */
+    /**
+     * @example  $reg->loadCSV('abc.csv',array(0), array(1,2,3));
+     *
+     * @param string $file
+     * @param array  $dependentVariableColumn
+     * @param array  $independentVariableColumns
+     * @param bool   $hasHeader
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function loadCSV(
+        $file,
+        array $dependentVariableColumn,
+        array $independentVariableColumns,
+        $hasHeader = true
+    ) {
+        $xArray = [];
+        $yArray = [];
+        $rawData = [];
+        $handle = fopen($file, 'rb');
+        if (false === $handle) {
+            throw new \InvalidArgumentException('Could not open CSV file ' . $file);
+        }
         //if first row has headers.. skip the first row
-        if ($hasHeader) {
+        if ($hasHeader && !feof($handle)) {
             fgetcsv($handle);
         }
         //get the remaining data into an array
-        while (($data = fgetcsv($handle)) !== FALSE) {
+        while (false !== ($data = fgetcsv($handle))) {
             $rawData[] = $data;
         }
+        fclose($handle);
         $sampleSize = count($rawData);  //total number of rows
-
-        $rowCounter = 0;
-        while ($rowCounter < $sampleSize) {
-            $xarray[] = $this->GetArray($rawData, $independentVariableColumns, $rowCounter, true);
-            $yarray[] = $this->GetArray($rawData, $dependentVariableColumn, $rowCounter);   //y always has 1 col!
-            $rowCounter++;
+        if (0 === $sampleSize) {
+            throw new \InvalidArgumentException('Received empty CSV file ' . $file);
         }
-        $this->x = $xarray;
-        $this->y = $yarray;
+        for ($i = 0; $i < $sampleSize; ++$i) {
+            $xArray[] = $this->getXArray($rawData, $independentVariableColumns, $i);
+            //y always has 1 col!
+            $yArray[] = $this->getYArray($rawData, $dependentVariableColumn, $i);
+        }
+        $this->setX($xArray);
+        $this->setY($yArray);
     }
-
-    private function GetArray($rawData, $colsToExtract, $row, $includeIntercept = false)
+    /**
+     * @param array $x
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function setX(array $x)
     {
-        $returnArray = array();
-        if ($includeIntercept) {
-            //prepend an all 1's column for the intercept. Only for X value
-            $returnArray[] = 1;
+        if (0 === count($x)) {
+            throw new \InvalidArgumentException('X can not but empty');
         }
+        $this->x = $x;
+    }
+    /**
+     * @param array $y
+     *
+     * @throws \InvalidArgumentException
+     */
+    public function setY(array $y)
+    {
+        if (0 === count($y)) {
+            throw new \InvalidArgumentException('Y can not but empty');
+        }
+        $this->y = $y;
+    }
+    /**
+     * @param array $rawData
+     * @param array $colsToExtract
+     * @param int   $row
+     *
+     * @return array
+     */
+    private function getXArray(array $rawData, array $colsToExtract, $row)
+    {
+        $returnArray = [1];
         foreach ($colsToExtract as $key => $val) {
             $returnArray[] = $rawData[$row][$val];
         }
         return $returnArray;
     }
-
-    public function Compute()
+    /**
+     * @param array $rawData
+     * @param array $colsToExtract
+     * @param int   $row
+     *
+     * @return array
+     */
+    private function getYArray(array $rawData, array $colsToExtract, $row)
     {
-        if ((count($this->x) == 0) || (count($this->y) == 0)) {
-            throw new \Exception ('Please supply valid X and Y arrays');
+        $returnArray = [];
+        foreach ($colsToExtract as $key => $val) {
+            $returnArray[] = $rawData[$row][$val];
         }
-        $this->observations = count($this->x);
-
-        $mx = new Matrix($this->x);
-        $my = new Matrix($this->y);
-
-        //coefficient(b) = (X'X)-1X'Y 
-        $xTx = $mx->Transpose()->Multiply($mx)->Inverse();
-        $xTy = $mx->Transpose()->Multiply($my);
-
-        $coeff = $xTx->Multiply($xTy);
-
-        $num_independent = $mx->NumColumns();   //note: intercept is included
-        $sample_size = $mx->NumRows();
-        $dfTotal = $sample_size - 1;
-        $dfModel = $num_independent - 1;
-        $dfResidual = $dfTotal - $dfModel;
-        //create unit vector..
-        for ($ctr = 0; $ctr < $sample_size; $ctr++)
-            $u[] = array(1);
-
-        $um = new Matrix($u);
-        //SSR = b(t)X(t)Y - (Y(t)UU(T)Y)/n        
-        //MSE = SSE/(df)
-        $SSR = $coeff->Transpose()->Multiply($mx->Transpose())->Multiply($my)
-            ->Subtract(
-                ($my->Transpose()
-                    ->Multiply($um)
-                    ->Multiply($um->Transpose())
-                    ->Multiply($my)
-                    ->ScalarDivide($sample_size))
-            );
-
-        $SSE = $my->Transpose()->Multiply($my)->Subtract(
-            $coeff->Transpose()
-                ->Multiply($mx->Transpose())
-                ->Multiply($my)
-        );
-
-        $SSTO = $SSR->Add($SSE);
-        $this->SSEScalar = $SSE->GetElementAt(0, 0);
-        $this->SSRScalar = $SSR->GetElementAt(0, 0);
-        $this->SSTOScalar = $SSTO->GetElementAt(0, 0);
-
-        $this->RSquare = $this->SSRScalar / $this->SSTOScalar;
-
-        $this->multipleR = sqrt($this->getRSQUARE());
-
-        $this->F = (($this->SSRScalar / ($dfModel)) / ($this->SSEScalar / ($dfResidual)));
-        $MSE = $SSE->ScalarDivide($dfResidual);
-        //this is a scalar.. get element
-        $e = ($MSE->GetElementAt(0, 0));
-
-        $stdErr = $xTx->ScalarMultiply($e);
-        for ($i = 0; $i < $num_independent; $i++) {
-            //get the diagonal elements
-            $searray[] = array(sqrt($stdErr->GetElementAt($i, $i)));
-            //compute the t-statistic
-            $tstat[] = array($coeff->GetElementAt($i, 0) / $searray[$i][0]);
-            //compute the student p-value from the t-stat
-            $pvalue[] = array($this->Student_PValue($tstat[$i][0], $dfResidual));
-        }
-        //convert into 1-d vectors and store
-        for ($ctr = 0; $ctr < $num_independent; $ctr++) {
-            $this->coefficients[] = $coeff->GetElementAt($ctr, 0);
-            $this->stderrors[] = $searray[$ctr][0];
-            $this->tstats[] = $tstat[$ctr][0];
-            $this->pvalues[] = $pvalue[$ctr][0];
-        }
+        return $returnArray;
     }
-
     /**
      * @link http://home.ubalt.edu/ntsbarsh/Business-stat/otherapplets/pvalues.htm#rtdist
+     *
      * @param float $t_stat
      * @param float $deg_F
+     *
      * @return float
      */
-    private function Student_PValue($t_stat, $deg_F)
+    private function student_PValue($t_stat, $deg_F)
     {
-        $t_stat = abs($t_stat);
+        $t_stat = (float)abs($t_stat);
         $mw = $t_stat / sqrt($deg_F);
         $th = atan2($mw, 1);
-        if ($deg_F == 1)
+        if ($deg_F === 1.0) {
             return 1.0 - $th / (M_PI / 2.0);
+        }
         $sth = sin($th);
         $cth = cos($th);
-        if ($deg_F % 2 == 1)
-            return 1.0 - ($th + $sth * $cth * $this->statcom($cth * $cth, 2, $deg_F - 3, -1)) / (M_PI / 2.0);
-        else
-            return 1.0 - ($sth * $this->statcom($cth * $cth, 1, $deg_F - 3, -1));
+        if ($deg_F % 2 === 1) {
+            return 1.0 - ($th + $sth * $cth * $this->statCom($cth * $cth, 2, $deg_F - 3, -1)) / (M_PI / 2.0);
+        } else {
+            return 1.0 - ($sth * $this->statCom($cth * $cth, 1, $deg_F - 3, -1));
+        }
     }
-
+    /** @noinspection MoreThanThreeArgumentsInspection */
     /**
      * @link http://home.ubalt.edu/ntsbarsh/Business-stat/otherapplets/pvalues.htm#rtdist
+     *
      * @param float $q
      * @param float $i
      * @param float $j
      * @param float $b
+     *
      * @return float
      */
-    private function statcom($q, $i, $j, $b)
+    private function statCom($q, $i, $j, $b)
     {
         $zz = 1;
         $z = $zz;
         $k = $i;
         while ($k <= $j) {
             $zz = $zz * $q * $k / ($k - $b);
-            $z = $z + $zz;
-            $k = $k + 2;
+            $z += $zz;
+            $k += 2;
         }
         return $z;
     }
-
+    /**
+     * @var int|float $f F statistic.
+     */
+    private $f;
+    /**
+     * @var int|float $rSquare R Square.
+     */
+    private $rSquare;
+    /**
+     * @var int|double $SSEScalar Sum of squares due to error.
+     */
+    private $SSEScalar;
+    /**
+     * @var int|double $SSRScalar Sum of squares due to regression.
+     */
+    private $SSRScalar;
+    /**
+     * @var int|double $SSTOScalar Total sum of squares.
+     */
+    private $SSTOScalar;
+    /**
+     * @var array $coefficients Regression coefficients array.
+     */
+    private $coefficients;
+    /**
+     * @var int|float $multipleR Multiple R.
+     */
+    private $multipleR;
+    /**
+     * @var int $observations observations.
+     */
+    private $observations;
+    /**
+     * @var array $pValues p values array.
+     */
+    private $pValues;
+    /**
+     * @var array $stdErrors Standard error array.
+     */
+    private $stdErrors;
+    /**
+     * @var array $tStats t statistics array.
+     */
+    private $tStats;
+    /**
+     * @var array $x
+     */
+    private $x = [];
+    /**
+     * @var array $y
+     */
+    private $y = [];
 }
-
-?>
