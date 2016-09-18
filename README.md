@@ -16,7 +16,7 @@ Add the LinearRegression package as a dependency to your composer.json file:
 ```json
 {
     "require": {
-        "mnshankar/LinearRegression": "1.0.*"
+        "mnshankar/linear-regression": "1.0.*"
     }
 }
 ```
